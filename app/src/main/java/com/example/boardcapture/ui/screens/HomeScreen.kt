@@ -15,21 +15,14 @@ import com.example.boardcapture.ui.components.SubjectCard
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
+    subjects: List<Subject>,
     onSubjectClick: (Subject) -> Unit,
+    onAddSubject: (Subject) -> Unit,
+    onDeleteSubject: (Subject) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // Temporary state - we'll make this persistent later
-    var subjects by remember {
-        mutableStateOf(
-            listOf(
-                Subject("1", "Mathematics", 12),
-                Subject("2", "Physics", 8),
-                Subject("3", "Programming", 15)
-            )
-        )
-    }
-
-    var showDialog by remember { mutableStateOf(false) }
+    var showAddDialog by remember { mutableStateOf(false) }
+    var subjectToDelete by remember { mutableStateOf<Subject?>(null) }
 
     Scaffold(
         topBar = {
@@ -43,7 +36,7 @@ fun HomeScreen(
         },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { showDialog = true },
+                onClick = { showAddDialog = true },
                 containerColor = MaterialTheme.colorScheme.primary
             ) {
                 Icon(Icons.Default.Add, contentDescription = "Add Subject")
@@ -78,7 +71,8 @@ fun HomeScreen(
                 items(subjects) { subject ->
                     SubjectCard(
                         subject = subject,
-                        onClick = { onSubjectClick(subject) }
+                        onClick = { onSubjectClick(subject) },
+                        onDelete = { subjectToDelete = subject }
                     )
                 }
             }
@@ -86,17 +80,31 @@ fun HomeScreen(
     }
 
     // Add subject dialog
-    if (showDialog) {
+    if (showAddDialog) {
         AddSubjectDialog(
-            onDismiss = { showDialog = false },
+            onDismiss = { showAddDialog = false },
             onConfirm = { subjectName ->
                 val newSubject = Subject(
                     id = System.currentTimeMillis().toString(),
                     name = subjectName,
                     photoCount = 0
                 )
-                subjects = subjects + newSubject
-                showDialog = false
+                onAddSubject(newSubject)
+                showAddDialog = false
+            }
+        )
+    }
+
+    // Delete confirmation dialog
+    subjectToDelete?.let { subject ->
+        DeleteConfirmationDialog(
+            subjectName = subject.name,
+            onConfirm = {
+                onDeleteSubject(subject)
+                subjectToDelete = null
+            },
+            onDismiss = {
+                subjectToDelete = null
             }
         )
     }
@@ -137,5 +145,37 @@ fun AddSubjectDialog(
                 Text("Cancel")
             }
         }
+    )
+}
+
+@Composable
+fun DeleteConfirmationDialog(
+    subjectName: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Delete Subject?") },
+        text = {
+            Text("Are you sure you want to delete \"$subjectName\" and all its photos? This cannot be undone.")
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = MaterialTheme.colorScheme.error
+                )
+            ) {
+                Text("Delete")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+        containerColor = MaterialTheme.colorScheme.surface,
+        iconContentColor = MaterialTheme.colorScheme.error
     )
 }

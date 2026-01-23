@@ -23,11 +23,16 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true  // CHANGED from false
+            isShrinkResources = true  // ADD THIS
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+        debug {
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 
@@ -42,6 +47,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = false
     }
 
     // KEEP THIS for Kotlin 1.9.x
@@ -52,6 +58,8 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "/META-INF/LICENSE*"
+            excludes += "/META-INF/NOTICE*"
         }
     }
 }
@@ -70,6 +78,9 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.5.0")
 
     implementation("androidx.compose.material:material-icons-extended:1.5.4")
+
+    implementation("androidx.profileinstaller:profileinstaller:1.3.1")
+
 
 
     debugImplementation("androidx.compose.ui:ui-tooling")
