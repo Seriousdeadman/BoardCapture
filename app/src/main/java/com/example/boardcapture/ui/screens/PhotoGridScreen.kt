@@ -6,12 +6,17 @@ import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
@@ -22,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.consumeAllChanges
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -48,7 +54,7 @@ fun PhotoGridScreen(
     var photos by remember { mutableStateOf<List<Photo>>(emptyList()) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var photoToDelete by remember { mutableStateOf<Photo?>(null) }
-    var selectedPhoto by remember { mutableStateOf<Photo?>(null) }
+    var selectedPhotoIndex by remember { mutableStateOf<Int?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
 
     // Load photos when screen opens
@@ -62,8 +68,8 @@ fun PhotoGridScreen(
     }
 
     // Handle back button press
-    androidx.activity.compose.BackHandler(enabled = selectedPhoto != null) {
-        selectedPhoto = null
+    BackHandler(enabled = selectedPhotoIndex != null) {
+        selectedPhotoIndex = null
     }
 
     Scaffold(
@@ -124,9 +130,9 @@ fun PhotoGridScreen(
             PhotoGrid(
                 photos = photos,
                 modifier = Modifier.padding(padding),
-                selectedPhoto = selectedPhoto,
-                onPhotoClick = { selectedPhoto = it },
-                onDismissPhoto = { selectedPhoto = null },
+                selectedPhotoIndex = selectedPhotoIndex,
+                onPhotoClick = { index -> selectedPhotoIndex = index },
+                onDismissPhoto = { selectedPhotoIndex = null },
                 onDeleteClick = { photo ->
                     photoToDelete = photo
                     showDeleteDialog = true
@@ -148,6 +154,12 @@ fun PhotoGridScreen(
                         val deleted = deletePhoto(context, photo)
                         if (deleted) {
                             photos = photos.filter { it.id != photo.id }
+                            // Adjust selected index if needed
+                            selectedPhotoIndex?.let { index ->
+                                if (index >= photos.size) {
+                                    selectedPhotoIndex = if (photos.isEmpty()) null else photos.size - 1
+                                }
+                            }
                             kotlinx.coroutines.CoroutineScope(Dispatchers.Main).launch {
                                 snackbarHostState.showSnackbar("Photo deleted")
                             }
@@ -176,8 +188,8 @@ fun PhotoGridScreen(
 fun PhotoGrid(
     photos: List<Photo>,
     modifier: Modifier = Modifier,
-    selectedPhoto: Photo?,
-    onPhotoClick: (Photo) -> Unit,
+    selectedPhotoIndex: Int?,
+    onPhotoClick: (Int) -> Unit,
     onDismissPhoto: () -> Unit,
     onDeleteClick: (Photo) -> Unit
 ) {
@@ -188,23 +200,24 @@ fun PhotoGrid(
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        items(photos) { photo ->
+        items(photos.size) { index ->
+            val photo = photos[index]
             PhotoThumbnail(
                 photo = photo,
-                onClick = { onPhotoClick(photo) },
+                onClick = { onPhotoClick(index) },
                 onDeleteClick = { onDeleteClick(photo) }
             )
         }
     }
 
-    // Full-screen photo viewer
-    selectedPhoto?.let { photo ->
+    // Full-screen photo viewer with swipe navigation
+    selectedPhotoIndex?.let { index ->
         FullScreenPhotoViewer(
-            photo = photo,
+            photos = photos,
+            initialIndex = index,
             onDismiss = onDismissPhoto,
-            onDeleteClick = {
+            onDeleteClick = { photo ->
                 onDeleteClick(photo)
-                onDismissPhoto()
             }
         )
     }
@@ -261,21 +274,33 @@ fun PhotoThumbnail(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun FullScreenPhotoViewer(
-    photo: Photo,
+    photos: List<Photo>,
+    initialIndex: Int,
     onDismiss: () -> Unit,
-    onDeleteClick: () -> Unit
+    onDeleteClick: (Photo) -> Unit
 ) {
-    var scale by remember { mutableStateOf(1f) }
-    var offsetX by remember { mutableStateOf(0f) }
-    var offsetY by remember { mutableStateOf(0f) }
+    val pagerState = rememberPagerState(
+        initialPage = initialIndex,
+        pageCount = { photos.size }
+    )
+
+    val currentPhoto = photos[pagerState.currentPage]
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(photo.displayName) },
+                title = {
+                    Column {
+                        Text(currentPhoto.displayName)
+                        Text(
+                            "${pagerState.currentPage + 1} / ${photos.size}",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onDismiss) {
                         Icon(Icons.Default.ArrowBack, "Close")
@@ -288,7 +313,7 @@ fun FullScreenPhotoViewer(
         },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = onDeleteClick,
+                onClick = { onDeleteClick(currentPhoto) },
                 containerColor = MaterialTheme.colorScheme.errorContainer,
                 contentColor = MaterialTheme.colorScheme.onErrorContainer
             ) {
@@ -300,44 +325,85 @@ fun FullScreenPhotoViewer(
         },
         containerColor = MaterialTheme.colorScheme.surface
     ) { padding ->
-        Box(
+        HorizontalPager(
+            state = pagerState,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding),
-            contentAlignment = Alignment.Center
-        ) {
-            AsyncImage(
-                model = ImageRequest.Builder(LocalContext.current)
-                    .data(photo.uri)
-                    .crossfade(true)
-                    .build(),
-                contentDescription = photo.displayName,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer(
-                        scaleX = scale,
-                        scaleY = scale,
-                        translationX = offsetX,
-                        translationY = offsetY
-                    )
-                    .pointerInput(Unit) {
-                        detectTransformGestures { _, pan, zoom, _ ->
-                            scale = (scale * zoom).coerceIn(1f, 5f)
+                .padding(padding)
+        ) { page ->
+            val photo = photos[page]
+            ZoomableImage(photo = photo)
+        }
+    }
+}
 
-                            // Only allow panning when zoomed in
-                            if (scale > 1f) {
+@Composable
+fun ZoomableImage(photo: Photo) {
+    var scale by remember { mutableStateOf(1f) }
+    var offsetX by remember { mutableStateOf(0f) }
+    var offsetY by remember { mutableStateOf(0f) }
+
+    // Reset zoom when photo changes
+    LaunchedEffect(photo.id) {
+        scale = 1f
+        offsetX = 0f
+        offsetY = 0f
+    }
+
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        AsyncImage(
+            model = ImageRequest.Builder(LocalContext.current)
+                .data(photo.uri)
+                .crossfade(true)
+                .build(),
+            contentDescription = photo.displayName,
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer(
+                    scaleX = scale,
+                    scaleY = scale,
+                    translationX = offsetX,
+                    translationY = offsetY
+                )
+                .pointerInput(photo.id) {
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false)
+
+                        do {
+                            val event = awaitPointerEvent()
+
+                            // Only handle multi-touch (pinch zoom)
+                            if (event.changes.size >= 2) {
+                                val zoom = event.calculateZoom()
+                                val pan = event.calculatePan()
+
+                                scale = (scale * zoom).coerceIn(1f, 5f)
+
+                                if (scale > 1f) {
+                                    offsetX += pan.x
+                                    offsetY += pan.y
+                                    // Consume the event to prevent pager from handling it
+                                    event.changes.forEach { it.consumeAllChanges() }
+                                } else {
+                                    offsetX = 0f
+                                    offsetY = 0f
+                                }
+                            } else if (scale > 1f && event.changes.size == 1) {
+                                // Single finger pan when zoomed
+                                val pan = event.calculatePan()
                                 offsetX += pan.x
                                 offsetY += pan.y
-                            } else {
-                                // Reset position when zoomed out
-                                offsetX = 0f
-                                offsetY = 0f
+                                event.changes.forEach { it.consumeAllChanges() }
                             }
-                        }
-                    },
-                contentScale = ContentScale.Fit
-            )
-        }
+
+                        } while (event.changes.any { it.pressed })
+                    }
+                },
+            contentScale = ContentScale.Fit
+        )
     }
 }
 
