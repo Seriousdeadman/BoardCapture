@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -15,7 +16,8 @@ import com.example.boardcapture.data.Subject
 @Composable
 fun SubjectCard(
     subject: Subject,
-    onClick: () -> Unit,
+    onTap: () -> Unit,
+    onView: () -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -31,7 +33,7 @@ fun SubjectCard(
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .clickable(onClick = onClick)
+                .clickable(onClick = onTap)
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -62,16 +64,27 @@ fun SubjectCard(
                 )
             }
 
+            // View button
+            IconButton(
+                onClick = {
+                    onView()
+                }
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Visibility,
+                    contentDescription = "View in gallery",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+
             // Delete button
             IconButton(
-                onClick = onDelete,
-                colors = IconButtonDefaults.iconButtonColors(
-                    contentColor = MaterialTheme.colorScheme.error
-                )
+                onClick = onDelete
             ) {
                 Icon(
                     imageVector = Icons.Default.Delete,
-                    contentDescription = "Delete subject"
+                    contentDescription = "Delete subject",
+                    tint = MaterialTheme.colorScheme.error
                 )
             }
         }

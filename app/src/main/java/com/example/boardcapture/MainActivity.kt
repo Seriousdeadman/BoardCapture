@@ -4,6 +4,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.ActivityResultLauncher
@@ -17,6 +18,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.FileProvider
 import com.example.boardcapture.data.Subject
 import com.example.boardcapture.ui.screens.HomeScreen
+import com.example.boardcapture.ui.screens.PhotoGridScreen
 import com.example.boardcapture.ui.theme.BoardCaptureTheme
 import com.example.boardcapture.utils.FolderScanner
 import com.example.boardcapture.utils.PhotoDeleter
@@ -44,14 +46,19 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+// Simple navigation state
+sealed class Screen {
+    object Home : Screen()
+    data class PhotoGrid(val subjectName: String) : Screen()
+}
+
 @Composable
 fun BoardCaptureApp() {
     val context = LocalContext.current
 
-    // Start with empty list, not null
+    var currentScreen by remember { mutableStateOf<Screen>(Screen.Home) }
     var subjects by remember { mutableStateOf(emptyList<Subject>()) }
 
-    // Scan gallery folders on app start
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
             val scannedSubjects = FolderScanner.scanGalleryFolders(context)
@@ -78,9 +85,6 @@ fun BoardCaptureApp() {
             )
 
             if (savedUri != null) {
-                println("Photo saved: $savedUri")
-
-                // Update photo count
                 subjects = subjects.map {
                     if (it.id == activeSubject!!.id) {
                         it.copy(photoCount = it.photoCount + 1)
@@ -89,7 +93,6 @@ fun BoardCaptureApp() {
                     }
                 }
 
-                // Launch camera again for next photo
                 val nextPhotoFile = File(context.cacheDir, "temp_photo_${System.currentTimeMillis()}.jpg")
                 currentPhotoFile = nextPhotoFile
 
@@ -104,7 +107,6 @@ fun BoardCaptureApp() {
                 Toast.makeText(context, "Failed to save photo", Toast.LENGTH_SHORT).show()
             }
         } else {
-            // User cancelled
             currentPhotoFile?.delete()
             currentPhotoFile = null
             activeSubject = null
@@ -137,25 +139,44 @@ fun BoardCaptureApp() {
         }
     )
 
-    // No null check needed - subjects starts as empty list
-    HomeScreen(
-        subjects = subjects,  // No !! needed
-        onSubjectClick = { subject ->
-            pendingSubject = subject
-            requestPermission()
-        },
-        onAddSubject = { newSubject ->
-            subjects = subjects + newSubject
-        },
-        onDeleteSubject = { subjectToDelete ->
-            CoroutineScope(Dispatchers.IO).launch {
-                PhotoDeleter.deleteSubjectPhotos(context, subjectToDelete.name)
+    // Show different screens based on navigation state
+    when (val screen = currentScreen) {
+        is Screen.Home -> {
+            HomeScreen(
+                subjects = subjects,
+                onSubjectClick = { subject ->
+                    pendingSubject = subject
+                    requestPermission()
+                },
+                onViewPhotos = { subject ->
+                    currentScreen = Screen.PhotoGrid(subject.name)
+                },
+                onAddSubject = { newSubject ->
+                    subjects = subjects + newSubject
+                },
+                onDeleteSubject = { subjectToDelete ->
+                    CoroutineScope(Dispatchers.IO).launch {
+                        PhotoDeleter.deleteSubjectPhotos(context, subjectToDelete.name)
 
-                withContext(Dispatchers.Main) {
-                    subjects = subjects.filter { it.id != subjectToDelete.id }
-                    Toast.makeText(context, "Deleted ${subjectToDelete.name}", Toast.LENGTH_SHORT).show()
+                        withContext(Dispatchers.Main) {
+                            subjects = subjects.filter { it.id != subjectToDelete.id }
+                            Toast.makeText(context, "Deleted ${subjectToDelete.name}", Toast.LENGTH_SHORT).show()
+                        }
+                    }
                 }
-            }
+            )
         }
-    )
+
+        is Screen.PhotoGrid -> {
+            // Handle back button to go back to Home when in PhotoGrid
+            BackHandler {
+                currentScreen = Screen.Home
+            }
+
+            PhotoGridScreen(
+                subjectName = screen.subjectName,
+                onBackClick = { currentScreen = Screen.Home }
+            )
+        }
+    }
 }

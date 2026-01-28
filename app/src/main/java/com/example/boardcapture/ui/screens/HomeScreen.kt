@@ -7,7 +7,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.example.boardcapture.data.Subject
 import com.example.boardcapture.ui.components.SubjectCard
@@ -17,11 +19,13 @@ import com.example.boardcapture.ui.components.SubjectCard
 fun HomeScreen(
     subjects: List<Subject>,
     onSubjectClick: (Subject) -> Unit,
+    onViewPhotos: (Subject) -> Unit,  // ADD THIS
     onAddSubject: (Subject) -> Unit,
     onDeleteSubject: (Subject) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var showAddDialog by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    var showDialog by remember { mutableStateOf(false) }
     var subjectToDelete by remember { mutableStateOf<Subject?>(null) }
 
     Scaffold(
@@ -36,7 +40,7 @@ fun HomeScreen(
         },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { showAddDialog = true },
+                onClick = { showDialog = true },
                 containerColor = MaterialTheme.colorScheme.primary
             ) {
                 Icon(Icons.Default.Add, contentDescription = "Add Subject")
@@ -49,14 +53,30 @@ fun HomeScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues),
-                contentAlignment = androidx.compose.ui.Alignment.Center
+                contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = "No subjects yet.\nTap + to add one!",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                )
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = null,
+                        modifier = Modifier.size(80.dp),
+                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "No subjects yet",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Tap + to add one!",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         } else {
             // Subject list
@@ -68,10 +88,12 @@ fun HomeScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 contentPadding = PaddingValues(vertical = 16.dp)
             ) {
+
                 items(subjects) { subject ->
                     SubjectCard(
                         subject = subject,
-                        onClick = { onSubjectClick(subject) },
+                        onTap = { onSubjectClick(subject) },
+                        onView = { onViewPhotos(subject) },  // CHANGED
                         onDelete = { subjectToDelete = subject }
                     )
                 }
@@ -80,9 +102,9 @@ fun HomeScreen(
     }
 
     // Add subject dialog
-    if (showAddDialog) {
+    if (showDialog) {
         AddSubjectDialog(
-            onDismiss = { showAddDialog = false },
+            onDismiss = { showDialog = false },
             onConfirm = { subjectName ->
                 val newSubject = Subject(
                     id = System.currentTimeMillis().toString(),
@@ -90,7 +112,7 @@ fun HomeScreen(
                     photoCount = 0
                 )
                 onAddSubject(newSubject)
-                showAddDialog = false
+                showDialog = false
             }
         )
     }
@@ -125,7 +147,8 @@ fun AddSubjectDialog(
                 value = subjectName,
                 onValueChange = { subjectName = it },
                 label = { Text("Subject name") },
-                singleLine = true
+                singleLine = true,
+                placeholder = { Text("e.g., Mathematics") }
             )
         },
         confirmButton = {
@@ -174,8 +197,6 @@ fun DeleteConfirmationDialog(
             TextButton(onClick = onDismiss) {
                 Text("Cancel")
             }
-        },
-        containerColor = MaterialTheme.colorScheme.surface,
-        iconContentColor = MaterialTheme.colorScheme.error
+        }
     )
 }
