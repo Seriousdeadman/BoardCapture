@@ -11,17 +11,14 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.FileProvider
 import com.example.boardcapture.data.Subject
 import com.example.boardcapture.ui.screens.HomeScreen
 import com.example.boardcapture.ui.theme.BoardCaptureTheme
+import com.example.boardcapture.utils.FolderScanner
 import com.example.boardcapture.utils.PhotoDeleter
 import com.example.boardcapture.utils.PhotoSaver
 import com.example.boardcapture.utils.rememberCameraPermission
@@ -49,15 +46,24 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun BoardCaptureApp() {
-    var subjects by remember {
-        mutableStateOf(emptyList<Subject>())
+    val context = LocalContext.current
+
+    // Start with empty list, not null
+    var subjects by remember { mutableStateOf(emptyList<Subject>()) }
+
+    // Scan gallery folders on app start
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            val scannedSubjects = FolderScanner.scanGalleryFolders(context)
+            withContext(Dispatchers.Main) {
+                subjects = scannedSubjects
+            }
+        }
     }
 
     var activeSubject by remember { mutableStateOf<Subject?>(null) }
     var currentPhotoFile by remember { mutableStateOf<File?>(null) }
     var pendingSubject by remember { mutableStateOf<Subject?>(null) }
-
-    val context = LocalContext.current
 
     var launcherRef by remember { mutableStateOf<ActivityResultLauncher<Uri>?>(null) }
 
@@ -73,8 +79,8 @@ fun BoardCaptureApp() {
 
             if (savedUri != null) {
                 println("Photo saved: $savedUri")
-                Toast.makeText(context, "Photo saved!", Toast.LENGTH_SHORT).show()
 
+                // Update photo count
                 subjects = subjects.map {
                     if (it.id == activeSubject!!.id) {
                         it.copy(photoCount = it.photoCount + 1)
@@ -83,6 +89,7 @@ fun BoardCaptureApp() {
                     }
                 }
 
+                // Launch camera again for next photo
                 val nextPhotoFile = File(context.cacheDir, "temp_photo_${System.currentTimeMillis()}.jpg")
                 currentPhotoFile = nextPhotoFile
 
@@ -97,6 +104,7 @@ fun BoardCaptureApp() {
                 Toast.makeText(context, "Failed to save photo", Toast.LENGTH_SHORT).show()
             }
         } else {
+            // User cancelled
             currentPhotoFile?.delete()
             currentPhotoFile = null
             activeSubject = null
@@ -124,13 +132,14 @@ fun BoardCaptureApp() {
             }
         },
         onPermissionDenied = {
-            Toast.makeText(context, "Camera permission is required", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "Camera permission required", Toast.LENGTH_SHORT).show()
             pendingSubject = null
         }
     )
 
+    // No null check needed - subjects starts as empty list
     HomeScreen(
-        subjects = subjects,
+        subjects = subjects,  // No !! needed
         onSubjectClick = { subject ->
             pendingSubject = subject
             requestPermission()
@@ -139,23 +148,12 @@ fun BoardCaptureApp() {
             subjects = subjects + newSubject
         },
         onDeleteSubject = { subjectToDelete ->
-            // Show deleting message
-            Toast.makeText(context, "Deleting ${subjectToDelete.name}...", Toast.LENGTH_SHORT).show()
-
-            // Delete photos in background
             CoroutineScope(Dispatchers.IO).launch {
-                val deletedCount = PhotoDeleter.deleteSubjectPhotos(context, subjectToDelete.name)
+                PhotoDeleter.deleteSubjectPhotos(context, subjectToDelete.name)
 
                 withContext(Dispatchers.Main) {
-                    // Remove from list
                     subjects = subjects.filter { it.id != subjectToDelete.id }
-
-                    // Show result
-                    Toast.makeText(
-                        context,
-                        "Deleted ${subjectToDelete.name} ($deletedCount photos)",
-                        Toast.LENGTH_LONG
-                    ).show()
+                    Toast.makeText(context, "Deleted ${subjectToDelete.name}", Toast.LENGTH_SHORT).show()
                 }
             }
         }
